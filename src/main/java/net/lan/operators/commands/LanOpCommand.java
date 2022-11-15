@@ -10,6 +10,7 @@ import net.minecraft.command.argument.GameProfileArgumentType;
 import net.minecraft.server.PlayerManager;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
+import net.minecraft.server.dedicated.command.OpCommand;
 import net.minecraft.text.Text;
 import net.minecraft.text.TranslatableText;
 
@@ -20,38 +21,24 @@ public class LanOpCommand {
     private static final SimpleCommandExceptionType ALREADY_OPPED_EXCEPTION = new SimpleCommandExceptionType(new TranslatableText("commands.op.failed"));
 
     public static void register(CommandDispatcher<ServerCommandSource> dispatcher) {
-        dispatcher.register((LiteralArgumentBuilder)((LiteralArgumentBuilder)CommandManager.literal("op").requires((serverCommandSource) -> {
-            return serverCommandSource.hasPermissionLevel(3);
-        })).then(CommandManager.argument("targets", GameProfileArgumentType.gameProfile()).suggests((commandContext, suggestionsBuilder) -> {
-            PlayerManager playerManager = ((ServerCommandSource)commandContext.getSource()).getMinecraftServer().getPlayerManager();
-            return CommandSource.suggestMatching(playerManager.getPlayerList().stream().filter((serverPlayerEntity) -> {
-                return !playerManager.isOperator(serverPlayerEntity.getGameProfile());
-            }).map((serverPlayerEntity) -> {
-                return serverPlayerEntity.getGameProfile().getName();
-            }), suggestionsBuilder);
-        }).executes((commandContext) -> {
-            return op((ServerCommandSource)commandContext.getSource(), GameProfileArgumentType.getProfileArgument(commandContext, "targets"));
-        })));
+        dispatcher.register((LiteralArgumentBuilder)((LiteralArgumentBuilder)CommandManager.literal("op").requires(source -> source.hasPermissionLevel(3))).then(CommandManager.argument("targets", GameProfileArgumentType.gameProfile()).suggests((context, builder) -> {
+            PlayerManager playerManager = ((ServerCommandSource)context.getSource()).getServer().getPlayerManager();
+            return CommandSource.suggestMatching(playerManager.getPlayerList().stream().filter(player -> !playerManager.isOperator(player.getGameProfile())).map(player -> player.getGameProfile().getName()), builder);
+        }).executes(context -> LanOpCommand.op((ServerCommandSource)context.getSource(), GameProfileArgumentType.getProfileArgument(context, "targets")))));
     }
 
     private static int op(ServerCommandSource source, Collection<GameProfile> targets) throws CommandSyntaxException {
-        PlayerManager playerManager = source.getMinecraftServer().getPlayerManager();
+        PlayerManager playerManager = source.getServer().getPlayerManager();
         int i = 0;
-        Iterator var4 = targets.iterator();
-
-        while(var4.hasNext()) {
-            GameProfile gameProfile = (GameProfile)var4.next();
-            if (!playerManager.isOperator(gameProfile)) {
-                playerManager.addToOperators(gameProfile);
-                ++i;
-                source.sendFeedback(new TranslatableText("commands.op.success", new Object[]{((GameProfile)targets.iterator().next()).getName()}), true);
-            }
+        for (GameProfile gameProfile : targets) {
+            if (playerManager.isOperator(gameProfile)) continue;
+            playerManager.addToOperators(gameProfile);
+            ++i;
+            source.sendFeedback(new TranslatableText("commands.op.success", targets.iterator().next().getName()), true);
         }
-
         if (i == 0) {
             throw ALREADY_OPPED_EXCEPTION.create();
-        } else {
-            return i;
         }
+        return i;
     }
 }
